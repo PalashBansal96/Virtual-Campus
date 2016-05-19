@@ -6,8 +6,10 @@ import android.content.*;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiManager;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.preference.PreferenceManager;
 import android.support.design.widget.FloatingActionButton;
+import android.support.design.widget.Snackbar;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
 import android.text.Editable;
@@ -15,15 +17,24 @@ import android.text.TextWatcher;
 import android.util.Log;
 import android.view.*;
 import android.widget.*;
+import com.android.volley.Request;
+import com.android.volley.Response;
+import com.android.volley.VolleyError;
+import com.android.volley.toolbox.StringRequest;
+import com.palashbansal.wifidatacollector.helpers.VolleyRequestQueue;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.*;
 import java.util.*;
+
+//Most of the code here regarding fetching WiFi APs is written by Vinayak Shukl {@link: https://github.com/VinayakShukl}
 
 public class MainActivity extends AppCompatActivity {
 
 	private static final int RESULT_SETTINGS = 1;
+	private static final String JSON_URL = "http://192.168.65.212:8000/Virtual_Campus/buildings.json";
 	WifiManager mainWifi;
 	IntentFilter filter;
 	List<ScanResult> scanResults;
@@ -31,14 +42,14 @@ public class MainActivity extends AppCompatActivity {
 	SimpleAdapter adapter;
 	ListView listview;
 	FloatingActionButton scanButton;
-	Button createStat;
+	FloatingActionButton saveButton;
+	int lastSavedID = -1;
 	boolean intentIsRegistered = false;
 	private final Map<String, List<List<String>>> buildings = new HashMap<>();
 	private Spinner buildingSpinner;
 	private EditText floorText;
 	private Spinner roomsSpinner;
 	private Button addRoomButton;
-
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
@@ -48,13 +59,26 @@ public class MainActivity extends AppCompatActivity {
 		setSupportActionBar(toolbar);
 
 		scanButton = (FloatingActionButton) findViewById(R.id.scan_fab);
+		saveButton = (FloatingActionButton) findViewById(R.id.save_fab);
 		mainWifi = (WifiManager) getSystemService(Context.WIFI_SERVICE);
 		filter = new IntentFilter();
 		filter.addAction(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION);
 		this.registerReceiver(wifiEventReceiver, filter);
 		intentIsRegistered = true;
-		populateSpinners();
-
+		VolleyRequestQueue.addToRequestQueue(new StringRequest(Request.Method.GET, JSON_URL,
+				new Response.Listener<String>() {
+					@Override
+					public void onResponse(String response) {
+						populateSpinners(response);
+					}
+				}, new Response.ErrorListener() {
+					@Override
+					public void onErrorResponse(VolleyError error) {
+						error.printStackTrace();
+					}
+				}
+			), this
+		);
 		if (!mainWifi.isWifiEnabled()) {
 			Log.e("DEBUG", "turning on wifi");
 			Toast.makeText(getApplicationContext(), "Enabling Wifi...",
@@ -67,40 +91,9 @@ public class MainActivity extends AppCompatActivity {
 		addListenerOnButton();
 	}
 
-	private void populateSpinners() {
-		//Make network call
+	private void populateSpinners(String initData) {
 		try {
-			JSONObject data = new JSONObject("{\n" +
-					"\"AcademicBlock\":\n" +
-					"[\n" +
-					"\t[\"C01\", \"C02\", \"C03\", \"Cdx\", \"Cdx-Glassroom\", \"LiftLobby\", \"Corridor-Cdx,LiftLobby\", \"Corridor-Cdx,C01\", \"Corridor-Classrooms\", \"Corridor-Foyer,Cdx\", \"Staircase-Classrooms\", \"Staircase-LiftLobby\", \"Staircase-WestSide\", \"Foyer\", \"Washroom-Boys\", \"Washroom-Girls\"]\n" +
-					"]\n" +
-					",\n" +
-					"\"StudentCentre\":\n" +
-					"[\n" +
-					"\t[\"Staircase-Internal\", \"Staircase-External\", \"Balcony\", \"PoolTT\", \"Gym\", \"LiftLobby\", \"Washroom-Boys\", \"Washroom-Girls\", \"Corridor-Washrooms,PoolTT,Gym\", \"Music\", \"Art\", \"StudentCouncil\", \"AC\", \"Electronics\"]\n" +
-					"]\n" +
-					",\n" +
-					"\"Hostel-Boys\":\n" +
-					"[\n" +
-					"\t[]\n" +
-					"]\n" +
-					",\n" +
-					"\"Hostel-Girls\":\n" +
-					"[\n" +
-					"\t[]\n" +
-					"]\n" +
-					",\n" +
-					"\"Library\":\n" +
-					"[\n" +
-					"\t[]\n" +
-					"]\n" +
-					",\n" +
-					"\"FacultyHousing\":\n" +
-					"[\n" +
-					"\t[]\n" +
-					"]\n" +
-					"}");
+			JSONObject data = new JSONObject(initData);
 			Iterator<String> keys = data.keys();
 			while( keys.hasNext() ) {
 				String key = keys.next();
@@ -128,7 +121,7 @@ public class MainActivity extends AppCompatActivity {
 		assert roomsSpinner != null;
 		assert buildingSpinner != null;
 		assert floorText != null;
-		buildingSpinner.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, buildings.keySet().toArray()));
+		buildingSpinner.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_list_item_activated_1, buildings.keySet().toArray()));
 		buildingSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
 			@Override
 			public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
@@ -211,10 +204,10 @@ public class MainActivity extends AppCompatActivity {
 		if(floorText.getText().toString().equals("")) floorText.setText("0");
 		int floor = Integer.parseInt(floorText.getText().toString());
 		try {
-			roomsSpinner.setAdapter(new ArrayAdapter<>(MainActivity.this, android.R.layout.simple_spinner_item, buildings.get(building).get(floor)));
+			roomsSpinner.setAdapter(new ArrayAdapter<>(MainActivity.this, android.R.layout.simple_list_item_activated_1, buildings.get(building).get(floor)));
 		}catch(Exception e){
 			e.printStackTrace();
-			roomsSpinner.setAdapter(new ArrayAdapter<>(MainActivity.this, android.R.layout.simple_spinner_item, new ArrayList<String>()));
+			roomsSpinner.setAdapter(new ArrayAdapter<>(MainActivity.this, android.R.layout.simple_list_item_activated_1, new ArrayList<String>()));
 		}
 	}
 
@@ -298,15 +291,39 @@ public class MainActivity extends AppCompatActivity {
 				}
 			}
 		});
+		saveButton.setOnClickListener(new View.OnClickListener() {
+			public void onClick(View v) {
+				String filename = "WiFiData.json";
+				File root = android.os.Environment.getExternalStorageDirectory();
+				File dir = new File (root.getAbsolutePath());
+				dir.mkdirs();
+				File file = new File(dir, filename);
+				try {
+					FileOutputStream f = new FileOutputStream(file, true);
+					PrintWriter pw = new PrintWriter(f);
 
-//		createStat.setOnClickListener(new View.OnClickListener() {
-//			public void onClick(View v) {
-////				startSendStat = new Intent(MainActivity.this, SendStat.class);
-////				startSendStat.putExtra("scanResult", list);
-////				startActivity(startSendStat);
-//				Toast.makeText(MainActivity.this, "Call class SendStat.", Toast.LENGTH_SHORT).show();
-//			}
-//		});
+					String readings = "";
+					if(scanResults==null)return;
+					for(ScanResult scanResult: scanResults){
+						readings+=String.format(Locale.ENGLISH, "\"%s\":%d,", scanResult.BSSID, scanResult.level);
+					}
+					String string = String.format(Locale.ENGLISH, "%d:{\"Location\":{\"Building\":\"%s\",\"Floor\":%d,\"Room\":\"%s\",\"Timestamp\":%d,},\"Readings\":{%s}},",
+							++lastSavedID, buildingSpinner.getSelectedItem(), Integer.parseInt(floorText.getText().toString()), roomsSpinner.getSelectedItem(), System.currentTimeMillis(), readings.substring(0,readings.length()-1));
+					pw.println(string);
+					pw.flush();
+					pw.close();
+					f.close();
+					Snackbar.make(scanButton, "Saved new entry, id: " + lastSavedID, Snackbar.LENGTH_LONG).show();
+				} catch (FileNotFoundException e) {
+					e.printStackTrace();
+					Log.e("Error", "File not found. Permission error maybe");
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+//				tv.append("\n\nFile written to "+file);
+			}
+		});
+
 	}
 
 	@Override
