@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+		xmlns:android="http://schemas.android.com/apk/res/android"
+		xmlns:tools="http://schemas.android.com/tools"
+		xmlns:app="http://schemas.android.com/apk/res-auto"
+		android:layout_width="match_parent"
+		android:layout_height="match_parent"
+		app:layout_behavior="@string/appbar_scrolling_view_behavior"
+		tools:showIn="@layout/activity_main"
+		tools:context="com.palashbansal.wifidatacollector.MainActivity"
+		android:orientation="vertical"
+	>
+
+	<TextView
+			android:layout_width="wrap_content"
+			android:layout_height="wrap_content"
+			android:padding="10dp"
+			android:text="Location"
+			style="@android:style/TextAppearance.Large"
+	/>
+	<LinearLayout
+			android:orientation="horizontal"
+			android:layout_width="match_parent"
+			android:paddingLeft="10dp"
+			android:paddingRight="10dp"
+			android:layout_height="wrap_content">
+		<TextView
+				android:layout_gravity="center"
+				android:layout_width="wrap_content"
+				android:layout_height="wrap_content"
+				android:text="Building"
+				style="@android:style/TextAppearance.Medium"
+		/>
+		<Spinner
+				android:layout_gravity="center"
+				android:layout_width="match_parent"
+				android:layout_height="wrap_content"
+				android:id="@+id/building_spinner"
+		/>
+	</LinearLayout>
+
+	<View
+			android:background="@android:color/darker_gray"
+			android:layout_width="match_parent"
+			android:layout_height="1dp"
+	/>
+	<LinearLayout
+			android:orientation="horizontal"
+			android:layout_width="match_parent"
+			android:paddingLeft="10dp"
+			android:paddingRight="10dp"
+			android:layout_height="wrap_content">
+		<TextView
+				android:layout_gravity="center"
+				android:layout_width="wrap_content"
+				android:layout_height="wrap_content"
+				android:text="Floor        "
+				style="@android:style/TextAppearance.Medium"
+		/>
+		<EditText
+				android:layout_gravity="center"
+				android:layout_width="match_parent"
+				android:layout_height="wrap_content"
+				android:inputType="number"
+				android:id="@+id/floor_text"
+		/>
+	</LinearLayout>
+
+	<View
+			android:background="@android:color/darker_gray"
+			android:layout_width="match_parent"
+			android:layout_height="1dp"
+	/>
+
+	<LinearLayout
+			android:orientation="horizontal"
+			android:layout_width="match_parent"
+			android:paddingLeft="10dp"
+			android:paddingRight="10dp"
+			android:layout_height="wrap_content">
+		<TextView
+				android:layout_gravity="center"
+				android:layout_width="wrap_content"
+				android:layout_height="wrap_content"
+				android:text="Room    "
+				style="@android:style/TextAppearance.Medium"
+		/>
+		<Spinner
+				android:layout_gravity="center"
+				android:layout_width="0dp"
+				android:layout_weight="1"
+				android:layout_height="wrap_content"
+				android:id="@+id/room_spinner"
+		/>
+		<Button
+				android:layout_gravity="center"
+				android:layout_width="48dp"
+				android:layout_height="48dp"
+				android:id="@+id/add_room"
+				android:text="+"
+		/>
+	</LinearLayout>
+
+	<View
+			android:background="@android:color/darker_gray"
+			android:layout_width="match_parent"
+			android:layout_height="3dp"
+	/>
+
+	<TextView
+			android:layout_width="wrap_content"
+			android:layout_height="wrap_content"
+			android:padding="10dp"
+			android:text="APs"
+			style="@android:style/TextAppearance.Large"
+	/>
+
+
+	<ListView
+			android:layout_width="match_parent"
+			android:layout_height="wrap_content"
+			android:id="@+id/listView"
+	/>
+
+</LinearLayout>
