@@ -6,14 +6,13 @@ import android.content.*;
 import android.net.wifi.ScanResult;
 import android.net.wifi.WifiManager;
 import android.os.Bundle;
-import android.os.SystemClock;
+import android.os.Handler;
 import android.preference.PreferenceManager;
 import android.support.design.widget.FloatingActionButton;
 import android.support.design.widget.Snackbar;
+import android.support.v4.content.res.ResourcesCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
-import android.text.Editable;
-import android.text.TextWatcher;
 import android.util.Log;
 import android.view.*;
 import android.widget.*;
@@ -34,22 +33,33 @@ import java.util.*;
 public class MainActivity extends AppCompatActivity {
 
 	private static final int RESULT_SETTINGS = 1;
-	private static final String JSON_URL = "http://192.168.65.212:8000/Virtual_Campus/buildings.json";
-	WifiManager mainWifi;
-	IntentFilter filter;
-	List<ScanResult> scanResults;
-	ArrayList<Map<String, String>> list;
-	SimpleAdapter adapter;
-	ListView listview;
-	FloatingActionButton scanButton;
-	FloatingActionButton saveButton;
-	int lastSavedID = -1;
-	boolean intentIsRegistered = false;
+	private static final String BASE_URL = "http://192.168.58.21:5000";
+	private static final String JSON_URL = BASE_URL + "/Virtual_Campus/buildings.json";
+	private static final String LOCATION_URL = BASE_URL + "/Virtual_Campus/test_location";
+	private static final String REPORT_URL = BASE_URL + "/Virtual_Campus/report_location";
+	private static final String SAVE_URL = BASE_URL + "/Virtual_Campus/save_file";
+	private WifiManager mainWifi;
+	private IntentFilter filter;
+	private List<ScanResult> scanResults;
+	private ArrayList<Map<String, String>> list;
+	private SimpleAdapter adapter;
+	private ListView listview;
+	private FloatingActionButton scanButton;
+	private FloatingActionButton saveButton;
+	private int lastSavedID = -1;
+	private boolean intentIsRegistered = false;
 	private final Map<String, List<List<String>>> buildings = new HashMap<>();
 	private Spinner buildingSpinner;
 	private EditText floorText;
 	private Spinner roomsSpinner;
 	private Button addRoomButton;
+	private LinearLayout locationForm;
+	private LinearLayout locationInfo;
+	private FloatingActionButton modeButton;
+	private boolean mode = false; //0: train, 1: test
+	private boolean reporting = false; //0: train, 1: test
+	private TextView locationInfoText;
+	private TextView locationReportButton;
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
@@ -58,26 +68,31 @@ public class MainActivity extends AppCompatActivity {
 		Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
 		setSupportActionBar(toolbar);
 
+		locationInfoText = (TextView) findViewById(R.id.location_info_text);
+		locationReportButton = (TextView) findViewById(R.id.location_report_button);
+		locationInfo = (LinearLayout) findViewById(R.id.location_info);
+		locationForm = (LinearLayout) findViewById(R.id.location_form);
 		scanButton = (FloatingActionButton) findViewById(R.id.scan_fab);
 		saveButton = (FloatingActionButton) findViewById(R.id.save_fab);
+		modeButton = (FloatingActionButton) findViewById(R.id.mode_fab);
 		mainWifi = (WifiManager) getSystemService(Context.WIFI_SERVICE);
 		filter = new IntentFilter();
 		filter.addAction(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION);
 		this.registerReceiver(wifiEventReceiver, filter);
 		intentIsRegistered = true;
 		VolleyRequestQueue.addToRequestQueue(new StringRequest(Request.Method.GET, JSON_URL,
-				new Response.Listener<String>() {
-					@Override
-					public void onResponse(String response) {
-						populateSpinners(response);
-					}
-				}, new Response.ErrorListener() {
+						new Response.Listener<String>() {
+							@Override
+							public void onResponse(String response) {
+								populateSpinners(response);
+							}
+						}, new Response.ErrorListener() {
 					@Override
 					public void onErrorResponse(VolleyError error) {
 						error.printStackTrace();
 					}
 				}
-			), this
+				), this
 		);
 		if (!mainWifi.isWifiEnabled()) {
 			Log.e("DEBUG", "turning on wifi");
@@ -89,6 +104,14 @@ public class MainActivity extends AppCompatActivity {
 		}
 
 		addListenerOnButton();
+		setLayoutHeight();
+	}
+
+	private void setLayoutHeight() {
+		LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) locationForm.getLayoutParams();
+		LinearLayout.LayoutParams params2 = (LinearLayout.LayoutParams) locationInfo.getLayoutParams();
+		params2.height = params.height;
+		locationInfo.setLayoutParams(params2);
 	}
 
 	private void populateSpinners(String initData) {
@@ -226,9 +249,9 @@ public class MainActivity extends AppCompatActivity {
 		int id = item.getItemId();
 
 		//noinspection SimplifiableIfStatement
-		if (id == R.id.action_settings) {
-			return true;
-		}
+//		if (id == R.id.action_settings) {
+//			return true;
+//		}
 
 		return super.onOptionsItemSelected(item);
 	}
@@ -301,13 +324,10 @@ public class MainActivity extends AppCompatActivity {
 				try {
 					FileOutputStream f = new FileOutputStream(file, true);
 					PrintWriter pw = new PrintWriter(f);
-
-					String readings = "";
+					if(buildingSpinner==null|| buildingSpinner.getSelectedItem()==null|| floorText.getText().toString().equals("")||roomsSpinner.getSelectedItem()==null) return;
 					if(scanResults==null)return;
-					for(ScanResult scanResult: scanResults){
-						readings+=String.format(Locale.ENGLISH, "\"%s\":%d,", scanResult.BSSID, scanResult.level);
-					}
-					String string = String.format(Locale.ENGLISH, "%d:{\"Location\":{\"Building\":\"%s\",\"Floor\":%d,\"Room\":\"%s\",\"Timestamp\":%d,},\"Readings\":{%s}},",
+					String readings = serializeWifiData();
+					String string = String.format(Locale.ENGLISH, "\"%d\":{\"Location\":{\"Building\":\"%s\",\"Floor\":%d,\"Room\":\"%s\",\"Timestamp\":%d},\"Readings\":{%s}},",
 							++lastSavedID, buildingSpinner.getSelectedItem(), Integer.parseInt(floorText.getText().toString()), roomsSpinner.getSelectedItem(), System.currentTimeMillis(), readings.substring(0,readings.length()-1));
 					pw.println(string);
 					pw.flush();
@@ -320,10 +340,158 @@ public class MainActivity extends AppCompatActivity {
 				} catch (IOException e) {
 					e.printStackTrace();
 				}
-//				tv.append("\n\nFile written to "+file);
 			}
 		});
+		modeButton.setOnClickListener(new View.OnClickListener() {
+			@Override
+			public void onClick(final View v) {
+				if(reporting){
+					if(buildingSpinner.getSelectedItem()==null|| floorText.getText().toString().equals("")||roomsSpinner.getSelectedItem()==null) return;
+					if(scanResults==null)return;
+					String readings = serializeWifiData();
+					final String string = String.format(Locale.ENGLISH, "%d:{\"Location\":{\"Building\":\"%s\",\"Floor\":%d,\"Room\":\"%s\",\"Timestamp\":%d,},\"Readings\":{%s}},",
+							lastSavedID, buildingSpinner.getSelectedItem(), Integer.parseInt(floorText.getText().toString()), roomsSpinner.getSelectedItem(), System.currentTimeMillis(), readings.substring(0,readings.length()-1));
+					VolleyRequestQueue.addToRequestQueue(new StringRequest(Request.Method.POST, REPORT_URL, new Response.Listener<String>() {
+						@Override
+						public void onResponse(String response) {
+							if(response.toLowerCase().equals("true")) {
+								reporting = false;
+								changeLocationInfoVisibility(true);
+								modeButton.setImageDrawable(ResourcesCompat.getDrawable(getResources(), R.drawable.test_tube, null));
+							}else{
+								Snackbar.make(v, response, Snackbar.LENGTH_SHORT).show();
+							}
+						}
+					}, new Response.ErrorListener() {
+						@Override
+						public void onErrorResponse(VolleyError error) {
+							Snackbar.make(v, "Network error: " + error.getMessage(), Snackbar.LENGTH_SHORT).show();
+							error.printStackTrace();
+						}
+					}){
+						@Override
+						protected Map<String,String> getParams(){
+							Map<String,String> params = new HashMap<>();
+							params.put("json", string);
+							return params;
+						}
+					}, MainActivity.this);
+					return;
+				}
+				mode = !mode;
+				changeLocationInfoVisibility(mode);
+				if(mode){ //test location
+					new Handler().postDelayed(new Runnable() {
+						Runnable object;
+						@Override
+						public void run() {
+							if(!mode) return;
+							object = this;
+							if(scanResults!=null){
+								VolleyRequestQueue.addToRequestQueue(new StringRequest(Request.Method.POST, LOCATION_URL, new Response.Listener<String>() {
+									@Override
+									public void onResponse(String response) {
+										locationInfoText.setText(response);
+										new Handler().postDelayed(object, 2000);
+									}
+								}, new Response.ErrorListener() {
+									@Override
+									public void onErrorResponse(VolleyError error) {
+										error.printStackTrace();
+										locationInfoText.setText("Unable to reach server");
+										new Handler().postDelayed(object, 2000);
+									}
+								}){
+									@Override
+									protected Map<String,String> getParams(){
+										Map<String,String> params = new HashMap<>();
+										for(ScanResult scanResult: scanResults)
+											params.put(scanResult.BSSID, String.valueOf(scanResult.level));
+										return params;
+									}
+								}, MainActivity.this);
+							}
+						}
+					}, 1);
+				}
+			}
+		});
+		locationReportButton.setOnClickListener(new View.OnClickListener() {
+			@Override
+			public void onClick(View v) {
+				changeLocationInfoVisibility(false);
+				modeButton.setImageDrawable(ResourcesCompat.getDrawable(getResources(), R.drawable.upload, null));
+				reporting = true;
+			}
+		});
+		saveButton.setLongClickable(true);
+		saveButton.setOnLongClickListener(new View.OnLongClickListener() {
+			@Override
+			public boolean onLongClick(final View v) {
+				String filename = "WiFiData.json";
+				File root = android.os.Environment.getExternalStorageDirectory();
+				File dir = new File (root.getAbsolutePath());
+				dir.mkdirs();
+				File file = new File(dir, filename);
+				try {
+					FileInputStream f = new FileInputStream(file);
+					final byte[] data = new byte[(int) file.length()];
+					int a = f.read(data);
+					if(a>0){
+						VolleyRequestQueue.addToRequestQueue(new StringRequest(Request.Method.POST, SAVE_URL, new Response.Listener<String>() {
+							@Override
+							public void onResponse(String response) {
+								if (response.equals("true")) {
+									Snackbar.make(v, "File sent to server.", Snackbar.LENGTH_SHORT).show();
+								}
+							}
+						}, new Response.ErrorListener() {
+							@Override
+							public void onErrorResponse(VolleyError error) {
+								error.printStackTrace();
+								Snackbar.make(v, "Error contacting server: " + error.getMessage(), Snackbar.LENGTH_SHORT).show();
+							}
+						}){
+							@Override
+							protected Map<String,String> getParams(){
+								Map<String,String> params = new HashMap<>();
+								try {
+									params.put("raw_data", new String(data, "UTF-8"));
+								} catch (UnsupportedEncodingException e) {
+									e.printStackTrace();
+								}
+								return params;
+							}
+						}, MainActivity.this);
+					}
+					f.close();
+				} catch (FileNotFoundException e) {
+					e.printStackTrace();
+					Log.e("Error", "File not found. Permission error maybe");
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+				return true;
+			}
+		});
+	}
 
+	private void changeLocationInfoVisibility(boolean b) {
+		if(b){
+			locationInfo.setVisibility(View.VISIBLE);
+			locationForm.setVisibility(View.GONE);
+		}else{
+			locationInfo.setVisibility(View.GONE);
+			locationForm.setVisibility(View.VISIBLE);
+		}
+	}
+
+	private String serializeWifiData() {
+		String readings = "";
+		for(ScanResult scanResult: scanResults){
+			readings+=String.format(Locale.ENGLISH, "\"%s\":%d,", scanResult.BSSID, scanResult.level);
+		}
+		return readings;
 	}
 
 	@Override
