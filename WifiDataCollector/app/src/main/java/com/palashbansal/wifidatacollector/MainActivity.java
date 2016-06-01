@@ -13,6 +13,7 @@ import android.support.design.widget.Snackbar;
 import android.support.v4.content.res.ResourcesCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
+import android.telephony.TelephonyManager;
 import android.util.Log;
 import android.view.*;
 import android.widget.*;
@@ -67,6 +68,9 @@ public class MainActivity extends AppCompatActivity {
 		setContentView(R.layout.activity_main);
 		Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
 		setSupportActionBar(toolbar);
+
+		SharedPreferences sharedPref = getPreferences(Context.MODE_PRIVATE);
+		lastSavedID = sharedPref.getInt("LAST ID", -1);
 
 		locationInfoText = (TextView) findViewById(R.id.location_info_text);
 		locationReportButton = (TextView) findViewById(R.id.location_report_button);
@@ -246,7 +250,7 @@ public class MainActivity extends AppCompatActivity {
 		// Handle action bar item clicks here. The action bar will
 		// automatically handle clicks on the Home/Up button, so long
 		// as you specify a parent activity in AndroidManifest.xml.
-		int id = item.getItemId();
+//		int id = item.getItemId();
 
 		//noinspection SimplifiableIfStatement
 //		if (id == R.id.action_settings) {
@@ -329,6 +333,10 @@ public class MainActivity extends AppCompatActivity {
 					String readings = serializeWifiData();
 					String string = String.format(Locale.ENGLISH, "\"%d\":{\"Location\":{\"Building\":\"%s\",\"Floor\":%d,\"Room\":\"%s\",\"Timestamp\":%d},\"Readings\":{%s}},",
 							++lastSavedID, buildingSpinner.getSelectedItem(), Integer.parseInt(floorText.getText().toString()), roomsSpinner.getSelectedItem(), System.currentTimeMillis(), readings.substring(0,readings.length()-1));
+					SharedPreferences sharedPref = getPreferences(Context.MODE_PRIVATE);
+					SharedPreferences.Editor editor = sharedPref.edit();
+					editor.putInt("LAST ID", lastSavedID);
+					editor.apply();
 					pw.println(string);
 					pw.flush();
 					pw.close();
@@ -456,6 +464,7 @@ public class MainActivity extends AppCompatActivity {
 							protected Map<String,String> getParams(){
 								Map<String,String> params = new HashMap<>();
 								try {
+									params.put("device_id", ((TelephonyManager)getSystemService(Context.TELEPHONY_SERVICE)).getDeviceId());
 									params.put("raw_data", new String(data, "UTF-8"));
 								} catch (UnsupportedEncodingException e) {
 									e.printStackTrace();
