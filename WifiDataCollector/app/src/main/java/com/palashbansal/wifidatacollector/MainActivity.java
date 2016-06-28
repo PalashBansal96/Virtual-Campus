@@ -34,11 +34,11 @@ import java.util.*;
 public class MainActivity extends AppCompatActivity {
 
 	private static final int RESULT_SETTINGS = 1;
-	private static final String BASE_URL = "http://192.168.58.21:5000";
-	private static final String JSON_URL = BASE_URL + "/Virtual_Campus/buildings.json";
-	private static final String LOCATION_URL = BASE_URL + "/Virtual_Campus/test_location";
-	private static final String REPORT_URL = BASE_URL + "/Virtual_Campus/report_location";
-	private static final String SAVE_URL = BASE_URL + "/Virtual_Campus/save_file";
+	private static String BASE_URL = "http://192.168.58.21:5000";
+	private static final String BUILDINGS_JSON_URL = "/Virtual_Campus/buildings.json";
+	private static final String LOCATION_URL = "/Virtual_Campus/test_location";
+	private static final String REPORT_URL = "/Virtual_Campus/report_location";
+	private static final String SAVE_URL = "/Virtual_Campus/save_file";
 	private WifiManager mainWifi;
 	private IntentFilter filter;
 	private List<ScanResult> scanResults;
@@ -59,8 +59,10 @@ public class MainActivity extends AppCompatActivity {
 	private FloatingActionButton modeButton;
 	private boolean mode = false; //0: train, 1: test
 	private boolean reporting = false; //0: train, 1: test
+	private static boolean debug = false;
 	private TextView locationInfoText;
 	private TextView locationReportButton;
+	private SharedPreferences sharedPref;
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
@@ -69,7 +71,7 @@ public class MainActivity extends AppCompatActivity {
 		Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
 		setSupportActionBar(toolbar);
 
-		SharedPreferences sharedPref = getPreferences(Context.MODE_PRIVATE);
+		sharedPref = getPreferences(Context.MODE_PRIVATE);
 		lastSavedID = sharedPref.getInt("LAST ID", -1);
 
 		locationInfoText = (TextView) findViewById(R.id.location_info_text);
@@ -80,24 +82,17 @@ public class MainActivity extends AppCompatActivity {
 		saveButton = (FloatingActionButton) findViewById(R.id.save_fab);
 		modeButton = (FloatingActionButton) findViewById(R.id.mode_fab);
 		mainWifi = (WifiManager) getSystemService(Context.WIFI_SERVICE);
+		listview = (ListView) findViewById(R.id.listView);
+
+		BASE_URL = sharedPref.getString("BASE_URL", BASE_URL);
+
 		filter = new IntentFilter();
 		filter.addAction(WifiManager.SCAN_RESULTS_AVAILABLE_ACTION);
 		this.registerReceiver(wifiEventReceiver, filter);
 		intentIsRegistered = true;
-		VolleyRequestQueue.addToRequestQueue(new StringRequest(Request.Method.GET, JSON_URL,
-						new Response.Listener<String>() {
-							@Override
-							public void onResponse(String response) {
-								populateSpinners(response);
-							}
-						}, new Response.ErrorListener() {
-					@Override
-					public void onErrorResponse(VolleyError error) {
-						error.printStackTrace();
-					}
-				}
-				), this
-		);
+
+		fetchBuildingsJSON();
+
 		if (!mainWifi.isWifiEnabled()) {
 			Log.e("DEBUG", "turning on wifi");
 			Toast.makeText(getApplicationContext(), "Enabling Wifi...",
@@ -109,6 +104,24 @@ public class MainActivity extends AppCompatActivity {
 
 		addListenerOnButton();
 		setLayoutHeight();
+	}
+
+	private void fetchBuildingsJSON() {
+		VolleyRequestQueue.addToRequestQueue(new StringRequest(Request.Method.GET, BASE_URL  + BUILDINGS_JSON_URL,
+						new Response.Listener<String>() {
+							@Override
+							public void onResponse(String response) {
+								populateSpinners(response);
+							}
+						}, new Response.ErrorListener() {
+					@Override
+					public void onErrorResponse(VolleyError error) {
+						error.printStackTrace();
+						Snackbar.make(listview, "Error contacting server: " + error.getMessage(), Snackbar.LENGTH_LONG).show();
+					}
+				}
+				), this
+		);
 	}
 
 	private void setLayoutHeight() {
@@ -250,12 +263,38 @@ public class MainActivity extends AppCompatActivity {
 		// Handle action bar item clicks here. The action bar will
 		// automatically handle clicks on the Home/Up button, so long
 		// as you specify a parent activity in AndroidManifest.xml.
-//		int id = item.getItemId();
+		int id = item.getItemId();
 
-		//noinspection SimplifiableIfStatement
-//		if (id == R.id.action_settings) {
-//			return true;
-//		}
+		if (id == R.id.action_settings) {
+			AlertDialog.Builder builder = new AlertDialog.Builder(this);
+			builder.setTitle("Title");
+			final EditText input = new EditText(this);
+			input.setText(BASE_URL);
+			builder.setView(input);
+			builder.setPositiveButton("OK", new DialogInterface.OnClickListener() {
+				@Override
+				public void onClick(DialogInterface dialog, int which) {
+					BASE_URL = input.getText().toString();
+					sharedPref.edit().putString("BASE_URL", BASE_URL).apply();
+					fetchBuildingsJSON();
+				}
+			});
+			builder.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
+				@Override
+				public void onClick(DialogInterface dialog, int which) {
+					dialog.cancel();
+				}
+			});
+			builder.show();
+			return true;
+		}else if(id == R.id.action_refresh_building){
+			fetchBuildingsJSON();
+			return true;
+		}else if(id == R.id.action_debug){
+			debug = !debug;
+			Snackbar.make(listview, "Debug: " + debug, Snackbar.LENGTH_SHORT);
+			return true;
+		}
 
 		return super.onOptionsItemSelected(item);
 	}
@@ -264,8 +303,12 @@ public class MainActivity extends AppCompatActivity {
 		@Override
 		public void onReceive(Context context, Intent intent) {
 			Log.e("DEBUG", "Update received!");
+			if(listview!=null&&debug)
+				Snackbar.make(listview, "Recieved " + intent.getAction(), Snackbar.LENGTH_SHORT).show();
 			if (WifiManager.SCAN_RESULTS_AVAILABLE_ACTION.equals(intent.getAction())) {
 				scanResults = mainWifi.getScanResults();
+				if(listview!=null&&debug)
+					Snackbar.make(listview, "Scan " + scanResults.size(), Snackbar.LENGTH_SHORT).show();
 				Log.d("scan", scanResults.toString());
 				list = new ArrayList<>();
 				Collections.sort(scanResults, new Comparator<ScanResult>() {
@@ -284,7 +327,6 @@ public class MainActivity extends AppCompatActivity {
 
 	private void updateList(Context context) {
 		adapter = new SimpleAdapter(context, list, R.layout.ap_list_item, new String[]{"BSSID", "Strength", "SSID"}, new int[]{R.id.BSSID, R.id.strength, R.id.SSID});
-		listview = (ListView) findViewById(R.id.listView);
 		assert listview != null;
 		listview.setAdapter(adapter);
 		adapter.notifyDataSetChanged();
@@ -315,6 +357,8 @@ public class MainActivity extends AppCompatActivity {
 					Toast.makeText(getApplicationContext(), "Scanning could not start", Toast.LENGTH_SHORT).show();
 				} else {
 					Log.e("DEBUG", "Scanning has started...");
+					if(listview!=null&&debug)
+						Snackbar.make(listview, "Scan Started", Snackbar.LENGTH_SHORT).show();
 				}
 			}
 		});
@@ -328,8 +372,14 @@ public class MainActivity extends AppCompatActivity {
 				try {
 					FileOutputStream f = new FileOutputStream(file, true);
 					PrintWriter pw = new PrintWriter(f);
-					if(buildingSpinner==null|| buildingSpinner.getSelectedItem()==null|| floorText.getText().toString().equals("")||roomsSpinner.getSelectedItem()==null) return;
-					if(scanResults==null)return;
+					if(buildingSpinner==null|| buildingSpinner.getSelectedItem()==null|| floorText.getText().toString().equals("")||roomsSpinner.getSelectedItem()==null) {
+						Snackbar.make(listview, "No Building selected", Snackbar.LENGTH_SHORT).show();
+						return;
+					}
+					if(scanResults==null) {
+						Snackbar.make(listview, "No AP Data", Snackbar.LENGTH_SHORT).show();
+						return;
+					}
 					String readings = serializeWifiData();
 					String string = String.format(Locale.ENGLISH, "\"%d\":{\"Location\":{\"Building\":\"%s\",\"Floor\":%d,\"Room\":\"%s\",\"Timestamp\":%d},\"Readings\":{%s}},",
 							++lastSavedID, buildingSpinner.getSelectedItem(), Integer.parseInt(floorText.getText().toString()), roomsSpinner.getSelectedItem(), System.currentTimeMillis(), readings.substring(0,readings.length()-1));
@@ -359,7 +409,7 @@ public class MainActivity extends AppCompatActivity {
 					String readings = serializeWifiData();
 					final String string = String.format(Locale.ENGLISH, "%d:{\"Location\":{\"Building\":\"%s\",\"Floor\":%d,\"Room\":\"%s\",\"Timestamp\":%d,},\"Readings\":{%s}},",
 							lastSavedID, buildingSpinner.getSelectedItem(), Integer.parseInt(floorText.getText().toString()), roomsSpinner.getSelectedItem(), System.currentTimeMillis(), readings.substring(0,readings.length()-1));
-					VolleyRequestQueue.addToRequestQueue(new StringRequest(Request.Method.POST, REPORT_URL, new Response.Listener<String>() {
+					VolleyRequestQueue.addToRequestQueue(new StringRequest(Request.Method.POST, BASE_URL + REPORT_URL, new Response.Listener<String>() {
 						@Override
 						public void onResponse(String response) {
 							if(response.toLowerCase().equals("true")) {
@@ -396,7 +446,7 @@ public class MainActivity extends AppCompatActivity {
 							if(!mode) return;
 							object = this;
 							if(scanResults!=null){
-								VolleyRequestQueue.addToRequestQueue(new StringRequest(Request.Method.POST, LOCATION_URL, new Response.Listener<String>() {
+								VolleyRequestQueue.addToRequestQueue(new StringRequest(Request.Method.POST, BASE_URL + LOCATION_URL, new Response.Listener<String>() {
 									@Override
 									public void onResponse(String response) {
 										locationInfoText.setText(response);
@@ -446,7 +496,8 @@ public class MainActivity extends AppCompatActivity {
 					final byte[] data = new byte[(int) file.length()];
 					int a = f.read(data);
 					if(a>0){
-						VolleyRequestQueue.addToRequestQueue(new StringRequest(Request.Method.POST, SAVE_URL, new Response.Listener<String>() {
+						Log.d("SAVE", BASE_URL + SAVE_URL);
+						VolleyRequestQueue.addToRequestQueue(new StringRequest(Request.Method.POST, BASE_URL + SAVE_URL, new Response.Listener<String>() {
 							@Override
 							public void onResponse(String response) {
 								if (response.equals("true")) {
